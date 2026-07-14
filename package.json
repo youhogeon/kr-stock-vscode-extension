@@ -1,0 +1,105 @@
+{
+  "name": "kr-stock",
+  "displayName": "KR Stock",
+  "description": "VS Code 상태 표시줄에 코스피, 코스닥 및 관심 종목의 현재가를 표시합니다.",
+  "version": "0.1.1",
+  "publisher": "youhogeon",
+  "icon": "assets/icon.png",
+  "repository": "https://github.com/youhogeon/kr-stock-vscode-extension",
+  "license": "WTFPL",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "mkdir -p package && yarn build && npx @vscode/vsce package --out package/$npm_package_name-$npm_package_version.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.9.2",
+    "@vscode/vsce": "^3.7.1"
+  },
+  "contributes": {
+    "configuration": {
+      "title": "KR Stock",
+      "properties": {
+        "krStock.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "상태 표시줄의 주식 시세 표시 기능을 켜거나 끕니다."
+        },
+        "krStock.showMarketIndexes": {
+          "type": "boolean",
+          "default": true,
+          "description": "상태 표시줄의 순환 목록에 코스피와 코스닥 지수를 표시합니다."
+        },
+        "krStock.stocks": {
+          "type": "array",
+          "default": [],
+          "description": "표시할 개별 종목 목록입니다. 예) {\"code\":\"005930\",\"name\":\"삼성전자\"}",
+          "items": {
+            "type": "object",
+            "required": ["code", "name"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "종목 코드입니다. (예: 005930)"
+              },
+              "name": {
+                "type": "string",
+                "description": "상태 표시줄에 사용할 종목 이름입니다. (예: 삼성전자)"
+              }
+            }
+          }
+        },
+        "krStock.rotationInterval": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "상태 표시줄에 표시할 지수와 종목을 전환하는 간격(초)입니다."
+        },
+        "krStock.refreshInterval": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "description": "시세 정보를 새로 가져오는 간격(초)입니다."
+        },
+        "krStock.exchangeRates": {
+          "type": "array",
+          "default": [],
+          "description": "표시할 환율 목록입니다. 예) {\"code\":\"USDKRW\",\"name\":\"환율\"}",
+          "items": {
+            "type": "object",
+            "required": ["code", "name"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "환율 코드입니다. (예: USDKRW)"
+              },
+              "name": {
+                "type": "string",
+                "description": "상태 표시줄에 사용할 환율 이름입니다. (예: 환율)"
+              }
+            }
+          }
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "krStock.showChart",
+        "title": "주식 그래프 보기",
+        "category": "KR Stock"
+      }
+    ]
+  }
+}

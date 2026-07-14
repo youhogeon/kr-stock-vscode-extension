@@ -1,0 +1,4 @@
+*.vsix
+out
+package
+node_modules

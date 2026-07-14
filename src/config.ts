@@ -1,0 +1,17 @@
+import * as vscode from 'vscode';
+
+import { CONFIG_SECTION, DEFAULT_ROTATION_INTERVAL_SEC, DEFAULT_REFRESH_INTERVAL_SEC } from './constants';
+import { ExchangeRateItem, StockConfig, StockItem } from './types';
+
+export function getConfig(): StockConfig {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+
+  return {
+    rotationInterval: Math.max(1, config.get<number>('rotationInterval', DEFAULT_ROTATION_INTERVAL_SEC)),
+    refreshInterval: Math.max(5, config.get<number>('refreshInterval', DEFAULT_REFRESH_INTERVAL_SEC)),
+    enabled: config.get<boolean>('enabled', true),
+    showMarketIndexes: config.get<boolean>('showMarketIndexes', true),
+    exchangeRates: config.get<ExchangeRateItem[]>('exchangeRates', []),
+    stocks: config.get<StockItem[]>('stocks', []),
+  };
+}

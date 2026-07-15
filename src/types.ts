@@ -18,6 +18,7 @@ export interface StockConfig {
   rotationInterval: number;
   refreshInterval: number;
   enabled: boolean;
+  hidden: boolean;
   showMarketIndexes: boolean;
   exchangeRates: ExchangeRateItem[];
   stocks: StockItem[];

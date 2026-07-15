@@ -37,6 +37,11 @@
           "default": true,
           "description": "상태 표시줄의 주식 시세 표시 기능을 켜거나 끕니다."
         },
+        "krStock.hidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "상태 표시줄에는 아이콘만 표시하고 시세는 마우스를 올렸을 때 확인합니다."
+        },
         "krStock.showMarketIndexes": {
           "type": "boolean",
           "default": true,

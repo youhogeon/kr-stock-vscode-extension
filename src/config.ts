@@ -10,6 +10,7 @@ export function getConfig(): StockConfig {
     rotationInterval: Math.max(1, config.get<number>('rotationInterval', DEFAULT_ROTATION_INTERVAL_SEC)),
     refreshInterval: Math.max(5, config.get<number>('refreshInterval', DEFAULT_REFRESH_INTERVAL_SEC)),
     enabled: config.get<boolean>('enabled', true),
+    hidden: config.get<boolean>('hidden', false),
     showMarketIndexes: config.get<boolean>('showMarketIndexes', true),
     exchangeRates: config.get<ExchangeRateItem[]>('exchangeRates', []),
     stocks: config.get<StockItem[]>('stocks', []),

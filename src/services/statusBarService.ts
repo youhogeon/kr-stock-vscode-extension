@@ -3,6 +3,7 @@ import { MarketIndex } from '../types';
 
 export class StatusBarService {
   private readonly statusBarItem: vscode.StatusBarItem;
+  private hidden = false;
 
   constructor() {
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
@@ -17,20 +18,26 @@ export class StatusBarService {
     this.statusBarItem.hide();
   }
 
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+  }
+
   update(current: MarketIndex, allMarkets: MarketIndex[]): void {
-    this.statusBarItem.text = `${current.label} ${current.value} (${current.changeRate})`;
+    this.statusBarItem.text = this.hidden
+      ? '$(graph)'
+      : `${current.label} ${current.value} (${current.changeRate})`;
     this.statusBarItem.tooltip = this.buildTooltip(allMarkets);
     this.statusBarItem.show();
   }
 
   setLoading(): void {
-    this.statusBarItem.text = 'Stock: Loading...';
+    this.statusBarItem.text = this.hidden ? '$(graph)' : 'Stock: Loading...';
     this.statusBarItem.tooltip = 'Loading market data...';
     this.statusBarItem.show();
   }
 
   setError(): void {
-    this.statusBarItem.text = 'Stock: Error';
+    this.statusBarItem.text = this.hidden ? '$(graph)' : 'Stock: Error';
     this.statusBarItem.tooltip = 'Failed to fetch market data';
     this.statusBarItem.show();
   }

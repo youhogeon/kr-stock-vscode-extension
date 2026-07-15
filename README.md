@@ -6,6 +6,7 @@
 ### 설정 예시
 ```
 {
+  "krStock.hidden": true,
   "krStock.stocks": [
     {"code":"005930", "name": "삼성전자"},
     {"code":"000660", "name": "SK하이닉스"},

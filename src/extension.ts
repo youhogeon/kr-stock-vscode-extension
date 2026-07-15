@@ -96,6 +96,7 @@ function start(): void {
     return;
   }
 
+  statusBar?.setHidden(config.hidden);
   statusBar?.setLoading();
   refresh();
   startRefresh();

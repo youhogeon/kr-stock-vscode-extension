@@ -14,9 +14,22 @@ export interface ExchangeRateItem {
   name: string;
 }
 
+export interface NewsItem {
+  id: string;
+  title: string;
+  createdAt: string;
+  source: string | null;
+}
+
+export interface NewsCacheState {
+  news: NewsItem[];
+  readIds: string[];
+}
+
 export interface StockConfig {
   rotationInterval: number;
   refreshInterval: number;
+  newsRefreshInterval: number | null;
   enabled: boolean;
   hidden: boolean;
   showMarketIndexes: boolean;

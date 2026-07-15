@@ -1,19 +1,38 @@
 import * as vscode from 'vscode';
 
-import { CONFIG_SECTION } from './constants';
+import {
+  CONFIG_SECTION,
+  MARK_NEWS_AS_READ_COMMAND,
+  OPEN_NEWS_COMMAND,
+  SHOW_NEWS_COMMAND,
+} from './constants';
 import { getConfig } from './config';
-import { clearCache, readCache, writeCache } from './services/cacheService';
+import {
+  clearCache,
+  initCacheService,
+  markNewsCacheAsRead,
+  readCache,
+  readNewsCache,
+  watchNewsCache,
+  writeCache,
+  writeNewsCache,
+} from './services/cacheService';
 import { appendHistory, getHistory } from './services/historyService';
 import { showChart } from './services/chartService';
 import { fetchAllMarkets } from './services/marketService';
+import { fetchLatestNews } from './services/newsService';
+import { NewsStatusBarService, showNewsQuickPick } from './services/newsStatusBarService';
 import { StatusBarService } from './services/statusBarService';
-import { MarketIndex } from './types';
+import { MarketIndex, NewsCacheState, NewsItem } from './types';
 
 let statusBar: StatusBarService | undefined;
+let newsStatusBar: NewsStatusBarService | undefined;
 let outputChannel: vscode.OutputChannel;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let rotationTimer: ReturnType<typeof setInterval> | undefined;
+let newsRefreshTimer: ReturnType<typeof setInterval> | undefined;
 let markets: MarketIndex[] = [];
+let news: NewsItem[] = [];
 let currentIndex = 0;
 let enabled = true;
 
@@ -25,6 +44,7 @@ function log(msg: string): void {
 function clearTimers(): void {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = undefined; }
   if (rotationTimer) { clearInterval(rotationTimer); rotationTimer = undefined; }
+  if (newsRefreshTimer) { clearInterval(newsRefreshTimer); newsRefreshTimer = undefined; }
 }
 
 function startRotation(): void {
@@ -84,6 +104,57 @@ function startRefresh(): void {
   log(`Refresh started: every ${config.refreshInterval}s`);
 }
 
+function unreadNews(state: NewsCacheState): NewsItem[] {
+  const readIds = new Set(state.readIds);
+  return state.news.filter((item) => !readIds.has(item.id));
+}
+
+async function refreshNews(): Promise<void> {
+  log('Refreshing news...');
+  try {
+    const config = getConfig();
+    if (config.newsRefreshInterval === null) {
+      newsStatusBar?.hide();
+      return;
+    }
+
+    const cached = readNewsCache(config.newsRefreshInterval);
+    if (cached) {
+      news = cached.news;
+      newsStatusBar?.update(unreadNews(cached));
+      log(`Using cached news (${news.length} items)`);
+      return;
+    }
+
+    const previous = readNewsCache();
+    const result = await fetchLatestNews();
+    if (result.length === 0) {
+      log('No news received, showing error');
+      newsStatusBar?.setError();
+      return;
+    }
+
+    const readIds = previous?.readIds ?? [];
+    news = result;
+    writeNewsCache(news, readIds);
+    const unread = unreadNews({ news, readIds });
+    newsStatusBar?.update(unread);
+    log(`News updated: ${news.length} items, unread: ${unread.length}`);
+  } catch (e) {
+    log(`News refresh error: ${e}`);
+    newsStatusBar?.setError();
+  }
+}
+
+function startNewsRefresh(): void {
+  if (newsRefreshTimer) { clearInterval(newsRefreshTimer); }
+  const config = getConfig();
+  if (config.newsRefreshInterval === null) { return; }
+
+  newsRefreshTimer = setInterval(refreshNews, config.newsRefreshInterval * 1000);
+  log(`News refresh started: every ${config.newsRefreshInterval}s`);
+}
+
 function start(): void {
   clearTimers();
   const config = getConfig();
@@ -92,7 +163,8 @@ function start(): void {
 
   if (!enabled) {
     statusBar?.hide();
-    log('Extension disabled, hiding status bar');
+    newsStatusBar?.hide();
+    log('Extension disabled, hiding status bars');
     return;
   }
 
@@ -101,17 +173,66 @@ function start(): void {
   refresh();
   startRefresh();
   startRotation();
+
+  if (config.newsRefreshInterval !== null) {
+    newsStatusBar?.setLoading();
+    refreshNews();
+    startNewsRefresh();
+  } else {
+    newsStatusBar?.hide();
+  }
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel('KR Stock');
   log('Extension activating...');
 
+  initCacheService(String(context.extension.packageJSON.version ?? '0'));
+
   statusBar = new StatusBarService();
+  newsStatusBar = new NewsStatusBarService();
 
   const chartCommand = vscode.commands.registerCommand('krStock.showChart', () => {
     const history = getHistory();
     showChart(history);
+  });
+
+  const openNewsCommand = vscode.commands.registerCommand(OPEN_NEWS_COMMAND, async (url: unknown) => {
+    if (typeof url !== 'string') { return; }
+
+    const uri = vscode.Uri.parse(url);
+    if (
+      uri.scheme !== 'https'
+      || uri.authority !== 'saveticker.com'
+      || !uri.path.startsWith('/news/')
+    ) {
+      log(`Blocked invalid news URL: ${url}`);
+      return;
+    }
+
+    await vscode.commands.executeCommand('simpleBrowser.show', url);
+  });
+
+  const showNewsCommand = vscode.commands.registerCommand(SHOW_NEWS_COMMAND, async () => {
+    const cached = readNewsCache();
+    await showNewsQuickPick(cached ? unreadNews(cached) : []);
+  });
+
+  const markNewsAsReadCommand = vscode.commands.registerCommand(MARK_NEWS_AS_READ_COMMAND, () => {
+    markNewsCacheAsRead();
+    newsStatusBar?.update([]);
+    log('All news marked as read');
+  });
+
+  const newsCacheWatcher = watchNewsCache(() => {
+    if (!enabled || getConfig().newsRefreshInterval === null) { return; }
+
+    const cached = readNewsCache();
+    if (!cached) { return; }
+
+    news = cached.news;
+    newsStatusBar?.update(unreadNews(cached));
+    log('News cache changed externally, status bar synced');
   });
 
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
@@ -124,8 +245,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(outputChannel);
   context.subscriptions.push(statusBar as unknown as vscode.Disposable);
+  context.subscriptions.push(newsStatusBar as unknown as vscode.Disposable);
   context.subscriptions.push({ dispose: clearTimers });
   context.subscriptions.push(chartCommand);
+  context.subscriptions.push(openNewsCommand);
+  context.subscriptions.push(showNewsCommand);
+  context.subscriptions.push(markNewsAsReadCommand);
+  context.subscriptions.push(newsCacheWatcher);
   context.subscriptions.push(configListener);
 
   start();
@@ -136,6 +262,9 @@ export function deactivate(): void {
   clearTimers();
   statusBar?.dispose();
   statusBar = undefined;
+  newsStatusBar?.dispose();
+  newsStatusBar = undefined;
   markets = [];
+  news = [];
   currentIndex = 0;
 }

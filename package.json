@@ -2,7 +2,7 @@
   "name": "kr-stock",
   "displayName": "KR Stock",
   "description": "VS Code 상태 표시줄에 코스피, 코스닥 및 관심 종목의 현재가를 표시합니다.",
-  "version": "0.1.1",
+  "version": "0.1.3-rc3",
   "publisher": "youhogeon",
   "icon": "assets/icon.png",
   "repository": "https://github.com/youhogeon/kr-stock-vscode-extension",

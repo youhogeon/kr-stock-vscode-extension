@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 
 import {
   MARK_NEWS_AS_READ_COMMAND,
-  NEWS_ITEM_URL,
   OPEN_NEWS_COMMAND,
   SHOW_NEWS_COMMAND,
 } from '../constants';
@@ -14,16 +13,16 @@ const SOURCE_LABELS: Readonly<Record<string, string>> = {
 };
 
 interface NewsQuickPickItem extends vscode.QuickPickItem {
-  url: string | null;
+  newsId: string | null;
 }
 
-function formatSource(source: string | null): string {
+export function formatSource(source: string | null): string {
   if (!source) { return ''; }
 
   return SOURCE_LABELS[source.trim().toLowerCase()] ?? source;
 }
 
-function formatRelativeTime(value: string): string {
+export function formatRelativeTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) { return ''; }
 
@@ -42,18 +41,18 @@ export async function showNewsQuickPick(unreadNews: NewsItem[]): Promise<void> {
     description: [formatSource(item.source), formatRelativeTime(item.createdAt)]
       .filter(Boolean)
       .join(' · '),
-    url: `${NEWS_ITEM_URL}${encodeURIComponent(item.id)}`,
+    newsId: item.id,
   }));
 
   const markAllAsReadItem: NewsQuickPickItem = {
     label: '$(check-all) 모두 읽음으로 표시',
-    url: null,
+    newsId: null,
   };
 
   const picked = await vscode.window.showQuickPick<NewsQuickPickItem>(
     [
       ...newsItems,
-      { label: '', kind: vscode.QuickPickItemKind.Separator, url: null },
+      { label: '', kind: vscode.QuickPickItemKind.Separator, newsId: null },
       markAllAsReadItem,
     ],
     { placeHolder: '열어볼 뉴스를 선택하세요' },
@@ -65,8 +64,8 @@ export async function showNewsQuickPick(unreadNews: NewsItem[]): Promise<void> {
     return;
   }
 
-  if (picked.url) {
-    await vscode.commands.executeCommand(OPEN_NEWS_COMMAND, picked.url);
+  if (picked.newsId) {
+    await vscode.commands.executeCommand(OPEN_NEWS_COMMAND, picked.newsId);
   }
 }
 

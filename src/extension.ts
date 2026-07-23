@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 import {
   CONFIG_SECTION,
   MARK_NEWS_AS_READ_COMMAND,
+  MAX_NEWS_ITEMS,
+  NEWS_DISPLAY_WINDOW_MS,
   OPEN_NEWS_COMMAND,
   SHOW_NEWS_COMMAND,
 } from './constants';
@@ -20,8 +22,9 @@ import {
 import { appendHistory, getHistory } from './services/historyService';
 import { showChart } from './services/chartService';
 import { fetchAllMarkets } from './services/marketService';
-import { fetchLatestNews } from './services/newsService';
+import { fetchLatestNews, fetchNewsDetail } from './services/newsService';
 import { NewsStatusBarService, showNewsQuickPick } from './services/newsStatusBarService';
+import { openNewsDocument, registerNewsViewer } from './services/newsViewerService';
 import { StatusBarService } from './services/statusBarService';
 import { MarketIndex, NewsCacheState, NewsItem } from './types';
 
@@ -106,7 +109,25 @@ function startRefresh(): void {
 
 function unreadNews(state: NewsCacheState): NewsItem[] {
   const readIds = new Set(state.readIds);
-  return state.news.filter((item) => !readIds.has(item.id));
+  const cutoff = Date.now() - NEWS_DISPLAY_WINDOW_MS;
+  return state.news.filter((item) => {
+    if (readIds.has(item.id)) { return false; }
+    const created = new Date(item.createdAt).getTime();
+    return Number.isNaN(created) || created >= cutoff;
+  });
+}
+
+// Merge freshly fetched news with what we already have so unread items can
+// accumulate beyond a single page. Newer fetches win on id collision, and the
+// pool is sorted newest-first and capped at MAX_NEWS_ITEMS.
+function mergeNews(fetched: NewsItem[], previous: NewsItem[]): NewsItem[] {
+  const byId = new Map<string, NewsItem>();
+  for (const item of previous) { byId.set(item.id, item); }
+  for (const item of fetched) { byId.set(item.id, item); }
+
+  return [...byId.values()]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, MAX_NEWS_ITEMS);
 }
 
 async function refreshNews(): Promise<void> {
@@ -135,11 +156,11 @@ async function refreshNews(): Promise<void> {
     }
 
     const readIds = previous?.readIds ?? [];
-    news = result;
+    news = mergeNews(result, previous?.news ?? []);
     writeNewsCache(news, readIds);
     const unread = unreadNews({ news, readIds });
     newsStatusBar?.update(unread);
-    log(`News updated: ${news.length} items, unread: ${unread.length}`);
+    log(`News updated: ${news.length} stored, unread (24h): ${unread.length}`);
   } catch (e) {
     log(`News refresh error: ${e}`);
     newsStatusBar?.setError();
@@ -197,20 +218,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     showChart(history);
   });
 
-  const openNewsCommand = vscode.commands.registerCommand(OPEN_NEWS_COMMAND, async (url: unknown) => {
-    if (typeof url !== 'string') { return; }
+  const openNewsCommand = vscode.commands.registerCommand(OPEN_NEWS_COMMAND, async (newsId: unknown) => {
+    if (typeof newsId !== 'string' || newsId.length === 0) { return; }
 
-    const uri = vscode.Uri.parse(url);
-    if (
-      uri.scheme !== 'https'
-      || uri.authority !== 'saveticker.com'
-      || !uri.path.startsWith('/news/')
-    ) {
-      log(`Blocked invalid news URL: ${url}`);
-      return;
+    try {
+      const detail = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: '뉴스 본문을 불러오는 중...' },
+        () => fetchNewsDetail(newsId),
+      );
+      await openNewsDocument(detail);
+    } catch (e) {
+      log(`Failed to open news ${newsId}: ${e}`);
+      vscode.window.showWarningMessage('뉴스 본문을 불러오지 못했습니다.');
     }
-
-    await vscode.commands.executeCommand('simpleBrowser.show', url);
   });
 
   const showNewsCommand = vscode.commands.registerCommand(SHOW_NEWS_COMMAND, async () => {
@@ -248,6 +268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(newsStatusBar as unknown as vscode.Disposable);
   context.subscriptions.push({ dispose: clearTimers });
   context.subscriptions.push(chartCommand);
+  context.subscriptions.push(registerNewsViewer());
   context.subscriptions.push(openNewsCommand);
   context.subscriptions.push(showNewsCommand);
   context.subscriptions.push(markNewsAsReadCommand);

@@ -6,18 +6,22 @@ import {
   KOSDAQ_LABEL,
   STOCK_ITEM_URL,
   EXCHANGE_RATE_URL,
+  ESIGNAL_SPARKLINE_URL,
+  ESIGNAL_REFERER,
+  FUTURE_KEYS,
 } from '../constants';
 import { ExchangeRateItem, MarketIndex, StockItem } from '../types';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const USER_AGENT = 'Mozilla/5.0 (compatible; KR-Stock/0.1)';
 
-function fetchHtml(url: string): Promise<string> {
+function fetchHtml(url: string, extraHeaders: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     const request = https.get(url, {
       headers: {
         'User-Agent': USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml',
+        ...extraHeaders,
       },
     }, (res) => {
       if (res.statusCode !== 200) {
@@ -131,6 +135,34 @@ async function fetchStock(item: StockItem): Promise<MarketIndex | null> {
   }
 }
 
+function parseFutureData(js: string, key: string, name: string): MarketIndex | null {
+  // esignal serves `var sl_close_<key> = 'CURRENT (CHANGE)';` where CHANGE is an
+  // absolute point delta. We convert it to a percentage to match every other item.
+  const closeMatch = new RegExp(`sl_close_${key}\\s*=\\s*'([^']*)'`).exec(js);
+  const raw = closeMatch?.[1];
+  const parts = raw?.match(/^([\d,]+(?:\.\d+)?)\s*\(([+-]?[\d,]+(?:\.\d+)?)\)/);
+  if (!parts) { return null; }
+
+  const value = parts[1];
+  const current = parseFloat(value.replace(/,/g, ''));
+  const change = parseFloat(parts[2].replace(/,/g, ''));
+  const previous = current - change;
+  if (!Number.isFinite(current) || !Number.isFinite(change) || previous === 0) { return null; }
+
+  const changeRate = formatRate(String((change / previous) * 100));
+  return changeRate ? { label: name, value, changeRate } : null;
+}
+
+async function fetchFuture(item: StockItem, key: string): Promise<MarketIndex | null> {
+  try {
+    const url = `${ESIGNAL_SPARKLINE_URL}${key}.js?cb=${Date.now()}`;
+    const js = await fetchHtml(url, { Referer: ESIGNAL_REFERER, Accept: '*/*' });
+    return parseFutureData(js, key, item.name);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchExchangeRate(item: ExchangeRateItem): Promise<MarketIndex | null> {
   try {
     const code = item.code.trim().toUpperCase();
@@ -156,7 +188,10 @@ export async function fetchAllMarkets(
   const promises: Promise<MarketIndex | null>[] = [
     ...indexPromises,
     ...exchangeRates.map((item) => fetchExchangeRate(item)),
-    ...stocks.map((s) => fetchStock(s)),
+    ...stocks.map((s) => {
+      const futureKey = FUTURE_KEYS[s.code.trim().toUpperCase()];
+      return futureKey ? fetchFuture(s, futureKey) : fetchStock(s);
+    }),
   ];
 
   const results = await Promise.all(promises);
